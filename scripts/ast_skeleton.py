@@ -51,10 +51,9 @@ BONUS_KINDS = frozenset({
     'service', 'controller', 'manager', 'handler', 'provider',
 })
 
-# Canonical entry-point filenames (case-insensitive, exact basename match)
-ENTRY_POINT_NAMES = frozenset({
+# Entry-point filenames that are ALWAYS entry regardless of location
+ENTRY_POINT_ALWAYS = frozenset({
     'main.ts', 'main.tsx', 'main.js', 'main.jsx', 'main.mjs',
-    'index.ts', 'index.tsx', 'index.js', 'index.jsx',
     'app.ts', 'app.tsx', 'app.js', 'app.jsx',
     'server.ts', 'server.js',
     '_app.tsx', '_app.ts',
@@ -62,12 +61,17 @@ ENTRY_POINT_NAMES = frozenset({
     'springbootapplication.java', 'servletinitializer.java',
     'main.go',
     'main.rs', 'lib.rs',
-    'main.py', '__main__.py', '__init__.py',
-    'app.py', 'server.py', 'manage.py',
+    'main.py', '__main__.py', 'app.py', 'server.py', 'manage.py',
     'train.py',
     'main.rb', 'app.rb',
     'main.swift', 'main.kt',
     'main.c', 'main.cpp',
+})
+
+# Entry by basename but ONLY when at project root (depth <= 2): barrel/index files
+ENTRY_POINT_ROOT_ONLY = frozenset({
+    'index.ts', 'index.tsx', 'index.js', 'index.jsx',
+    '__init__.py',
 })
 
 # Suffix patterns for entry point files (case-insensitive)
@@ -470,6 +474,17 @@ EXTRACTORS = {
 }
 
 
+def _is_root_level(rel_path):
+    parts = Path(rel_path).parts
+    # Root of project (1 part), or one dir down (2 parts),
+    # or under src/ / lib/ / app/ / cmd/ / pkg/ at depth 2-3
+    if len(parts) <= 2:
+        return True
+    if len(parts) == 3 and parts[0] in ('src', 'lib', 'app', 'internal', 'cmd', 'pkg'):
+        return True
+    return False
+
+
 def classify_file(rel_path, language, extracted_data):
     filename = os.path.basename(rel_path).lower()
 
@@ -477,8 +492,10 @@ def classify_file(rel_path, language, extracted_data):
     if is_test_file(rel_path):
         return 'test'
 
-    # 2. Entry point check (exact basename or suffix match)
-    if filename in ENTRY_POINT_NAMES:
+    # 2. Entry point check
+    if filename in ENTRY_POINT_ALWAYS:
+        return 'entry'
+    if filename in ENTRY_POINT_ROOT_ONLY and _is_root_level(rel_path):
         return 'entry'
     if filename.endswith(ENTRY_POINT_SUFFIXES):
         return 'entry'
@@ -572,7 +589,7 @@ def compute_importance_score(module, import_map):
     score = 0
     filename = os.path.basename(module['file']).lower()
 
-    if filename in ENTRY_POINT_NAMES or filename.endswith(ENTRY_POINT_SUFFIXES):
+    if filename in ENTRY_POINT_ALWAYS or (filename in ENTRY_POINT_ROOT_ONLY and _is_root_level(module['file'])) or filename.endswith(ENTRY_POINT_SUFFIXES):
         score += 100
 
     importers = import_map.get(module['file'], [])
