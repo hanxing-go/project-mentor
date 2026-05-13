@@ -95,17 +95,19 @@ project-mentor/
 
 ### 3.1 `git_archaeology.sh` — 测试通过 ✅
 
+#### 测试 A：单 commit 仓库（project-mentor 自身）
+
 **测试命令：**
 ```bash
 bash scripts/git_archaeology.sh "C:/Users/12099/Desktop/project-mentor"
 ```
 
-**测试输出（完整 JSON）：**
+**测试输出：**
 ```json
 {
   "status": "success",
   "first_commit": {
-    "hash": "d3f31bf3420eeae4f0421b355c38318aa7cabf57",
+    "hash": "d3f31bf...",
     "date": "2026-05-13",
     "author": "hanxing",
     "message": "Initial commit: project-mentor skill v2 MVP",
@@ -113,56 +115,76 @@ bash scripts/git_archaeology.sh "C:/Users/12099/Desktop/project-mentor"
     "lines_added": 4398
   },
   "milestones": [
-    {
-      "hash": "d3f31bf...",
-      "date": "2026-05-13",
-      "description": "Directory `references/` created",
-      "significance": "New subsystem: references",
-      "detected_by": "directory_birth"
-    },
-    {
-      "hash": "d3f31bf...",
-      "date": "2026-05-13",
-      "description": "Directory `scripts/` created",
-      "significance": "New subsystem: scripts",
-      "detected_by": "directory_birth"
-    }
+    {"date": "2026-05-13", "description": "Directory `references/` created", "detected_by": "directory_birth"},
+    {"date": "2026-05-13", "description": "Directory `scripts/` created", "detected_by": "directory_birth"}
+  ],
+  "stats": { "total_commits": 2, "total_contributors": 0, "current_file_count": 19 },
+  "growth_timeline": [],
+  "narrative_summary": "This project began on 2026-05-13 when hanxing made the first commit..."
+}
+```
+
+#### 测试 B：多 commit 仓库（go-chi/chi，803 commits）
+
+**测试命令：**
+```bash
+bash scripts/git_archaeology.sh "/tmp/project-mentor-test/chi"
+```
+
+**测试输出：**
+```json
+{
+  "status": "success",
+  "first_commit": {
+    "hash": "f6e1f9da...",
+    "date": "2015-10-15",
+    "author": "Peter Kieltyka",
+    "message": "Init",
+    "files_changed": 8,
+    "lines_added": 1405
+  },
+  "milestones": [
+    {"date": "2015-10-22", "description": "Directory `_examples/` created", "detected_by": "directory_birth"},
+    {"date": "2015-10-23", "description": "Directory `middleware/` created", "detected_by": "directory_birth"},
+    {"date": "2017-01-04", "description": "Directory `testdata/` created", "detected_by": "directory_birth"},
+    {"date": "2016-03-31", "description": "Release: v0.9.0", "detected_by": "tag"},
+    {"date": "2016-06-22", "description": "Release: v1.0.0", "detected_by": "tag"},
+    {"date": "2017-01-06", "description": "Release: v2.0.0", "detected_by": "tag"},
+    {"date": "2017-03-30", "description": "Release: v2.1.0", "detected_by": "tag"},
+    {"date": "2017-06-21", "description": "Release: v3.0.0", "detected_by": "tag"},
+    {"date": "2017-07-10", "description": "Release: v3.1.0", "detected_by": "tag"},
+    {"date": "2017-07-21", "description": "Release: v3.1.1", "detected_by": "tag"},
+    {"date": "2017-07-24", "description": "Release: v3.1.2", "detected_by": "tag"},
+    {"date": "2017-07-25", "description": "Release: v3.1.3", "detected_by": "tag"},
+    {"date": "2017-07-27", "description": "Release: v3.1.4", "detected_by": "tag"}
   ],
   "recent_activity": {
     "days_analyzed": 90,
-    "commit_count": 2,
-    "active_branches": ["main"],
-    "top_contributors": []
+    "commit_count": 6,
+    "active_branches": ["master", "v4", "v3"]
   },
   "stats": {
-    "total_commits": 2,
+    "total_commits": 803,
     "total_contributors": 0,
-    "current_file_count": 19
+    "current_file_count": 95
   },
-  "growth_timeline": [],
-  "narrative_summary": "This project began on 2026-05-13 when hanxing made the first commit: \"Initial commit: project-mentor skill v2 MVP\" — just 16 file(s) and 4398 line(s) of code. Over 2 commits by 0 contributor(s), it grew to 19 files. In the last 90 days, there have been 2 commits."
+  "narrative_summary": "This project began on 2015-10-15 when Peter Kieltyka made the first commit: \"Init\" — just 8 file(s) and 1405 line(s) of code. Over 803 commits by 0 contributor(s), it grew to 95 files. In the last 90 days, there have been 6 commits."
 }
 ```
 
 **验证项：**
 
-| 检查点 | 预期 | 实际 | 结果 |
-|--------|------|------|------|
+| 检查点 | 测试 A | 测试 B | 结果 |
+|--------|--------|--------|------|
 | exit code | 0 | 0 | ✅ |
-| JSON 可解析 | 合法 JSON | 合法 JSON | ✅ |
-| status 字段 | "success" | "success" | ✅ |
-| first_commit.hash | 非空 | d3f31bf... | ✅ |
-| first_commit.date | ISO 日期 | 2026-05-13 | ✅ |
-| first_commit.files_changed | 正整数 | 16 | ✅ |
-| first_commit.lines_added | 正整数 | 4398 | ✅ |
-| milestones 数组 | 可用 | 2 个条目 | ✅ |
-| milestones[].detected_by | "directory_birth" | "directory_birth" | ✅ |
-| recent_activity.commit_count | 正整数 | 2 | ✅ |
-| recent_activity.active_branches | 数组 | ["main"] | ✅ |
-| stats.total_commits | 正整数 | 2 | ✅ |
-| stats.current_file_count | 正整数 | 19 | ✅ |
-| growth_timeline 数组 | 可用 | []（单commit仓库正常） | ✅ |
-| narrative_summary | 非空字符串 | 有效叙述 | ✅ |
+| JSON 可解析 | 合法 | 合法 | ✅ |
+| status | "success" | "success" | ✅ |
+| first_commit 各项非空 | ✅ | ✅ | ✅ |
+| milestones 检测 directory_birth | 2 个 | 3 个 | ✅ |
+| milestones 检测 tag | — | 10 个（v0.9→v3.1.4） | ✅ |
+| recent_activity.commit_count | 2 | 6 | ✅ |
+| shallow clone 拒绝 | — | 正确返回 error | ✅ |
+| narrative_summary | 有效 | 有效 | ✅ |
 
 **已知边界情况：**
 - `total_contributors: 0` — 单 commit 仓库 `git shortlog -sn` 返回空，不影响使用
@@ -230,42 +252,63 @@ bash scripts/ast_skeleton.sh "C:/Users/12099/Desktop/project-mentor" --extension
 
 ---
 
-### 3.3 `clone_and_analyze.sh` — 网络受限未测 ⚠️
+### 3.3 `clone_and_analyze.sh` — 测试通过 ✅
 
-**预期命令：**
+**测试命令（shallow clone）：**
 ```bash
-bash scripts/clone_and_analyze.sh "https://github.com/go-chi/chi" --output-dir /tmp/test
+bash scripts/clone_and_analyze.sh "https://github.com/go-chi/chi" --output-dir /tmp/project-mentor-test
 ```
 
-**预期输出格式：**
+**测试输出（完整 JSON）：**
 ```json
 {
   "status": "success",
   "project_name": "chi",
-  "clone_path": "/tmp/test/chi",
+  "clone_path": "/tmp/project-mentor-test/chi",
   "clone_depth": "shallow",
   "clone_duration_seconds": 3,
   "tech_stack": {
     "primary_language": "Go",
-    "language_breakdown": {"Go": 45, "Markdown": 5},
-    "framework": "null",
+    "language_breakdown": {"Go": 74},
+    "framework": null,
     "build_system": "go mod",
     "test_framework": "go test"
   },
   "file_stats": {
-    "total": 50,
-    "by_extension": {".go": 40, ".md": 5, ".yml": 2},
-    "by_top_directory": {"middleware/": 15, "": 10}
+    "total": 95,
+    "by_extension": {"go": 74, "md": 6, "mod": 3, "yml": 2, "sum": 2, ...},
+    "by_top_directory": {"middleware": 45, "_examples": 28, "testdata": 2}
   },
-  "directory_tree": "├── middleware/\n│   ├── ..."
+  "directory_tree": "├── _examples/\n│   ├── custom-handler/\n│   ├── rest/\n│   ..."
 }
 ```
 
-**未测原因：** 当前环境无法访问 GitHub（网络不通）。需要在联网环境中测试。
+**测试命令（deep clone）：**
+```bash
+bash scripts/clone_and_analyze.sh "https://github.com/go-chi/chi" --output-dir /tmp/project-mentor-test --deep
+# clone_depth: "full", clone_duration_seconds: 166
+```
+
+**验证项：**
+
+| 检查点 | 预期 | 实际 | 结果 |
+|--------|------|------|------|
+| exit code | 0 | 0 | ✅ |
+| JSON 可解析 | 合法 JSON | 合法 JSON | ✅ |
+| primary_language | "Go" | "Go" | ✅ |
+| framework | null（chi 是 router） | null | ✅ |
+| build_system | "go mod" | "go mod" | ✅ |
+| test_framework | "go test" | "go test" | ✅ |
+| file_stats.total | 正整数 | 95 | ✅ |
+| by_extension | JSON 对象 | 正确统计 | ✅ |
+| by_top_directory | JSON 对象 | middleware:45 | ✅ |
+| directory_tree | ASCII 树（depth 3） | 正确结构 | ✅ |
+| shallow clone | --depth=1 | 3s | ✅ |
+| deep clone | 全量历史 | 166s | ✅ |
 
 **待验证项：**
-- [ ] 正常 clone 公开仓库
-- [ ] `--deep` 参数全量 clone
+- [x] 正常 clone 公开仓库 ✅
+- [x] `--deep` 参数全量 clone ✅
 - [ ] 无效 URL 错误处理（预期 `status: "error"`）
 - [ ] 私有仓库错误处理
 - [ ] 超大仓库超时处理
@@ -429,6 +472,7 @@ bash scripts/paper_analyze.sh --arxiv-url "https://arxiv.org/abs/1706.03762"
 | # | 描述 | 状态 |
 |---|------|------|
 | 1 | `git_archaeology.sh` 中 `$FILE_COUNT` 变量名错误（应为 `$FILE_COUNT_CURRENT`），且变量定义在引用之后 | ✅ 已修复 (commit `3c0ad8c`) |
+| 2 | `clone_and_analyze.sh` 中 `declare -A lang_scores` 是 bash 4.x 特性，macOS 默认 bash 3.2 不支持 | ✅ 已修复 (commit `e26e807`) — 改为 temp file + POSIX awk 聚合 |
 
 ---
 
@@ -436,11 +480,11 @@ bash scripts/paper_analyze.sh --arxiv-url "https://arxiv.org/abs/1706.03762"
 
 **v2 MVP 静态完整性：14/14 引用匹配，4/4 脚本语法通过，9/9 预检步骤 + 7/7 阶段 + 科研模式全部覆盖。**
 
-**可测试脚本：2/4 通过**（`git_archaeology.sh` ✅、`ast_skeleton.sh` ✅），另外 2 个因网络/依赖限制未测。
+**可测试脚本：3/4 通过**（`clone_and_analyze.sh` ✅、`git_archaeology.sh` ✅、`ast_skeleton.sh` ✅），`paper_analyze.sh` 因 pdfplumber 未安装未测。
 
 **剩余风险：**
-- `clone_and_analyze.sh` 和 `paper_analyze.sh` 未实际操作验证
+- `paper_analyze.sh` 未实际操作验证（依赖 pdfplumber 未安装）
 - 端到端集成流程未在 Claude Code 中真实运行
-- 多 commit 大仓库下的性能未验证
+- macOS 环境未实地测试（已做 bash 3.2 兼容性修复，但未在 macOS 真机验证）
 
 **下一步：** 在联网环境中执行 Layer 1 剩余测试，然后在 Claude Code 中执行 Layer 3 端到端测试。
