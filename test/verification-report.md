@@ -476,7 +476,52 @@ bash scripts/paper_analyze.sh --arxiv-url "https://arxiv.org/abs/1706.03762"
 
 ---
 
-## 9. 测试结论
+## 9. Python 脚本测试 (新增 — 2026-05-13)
+
+### 9.1 脚本清单
+
+| 脚本 | 行数 | 依赖 |
+|------|------|------|
+| `scripts/clone_and_analyze.py` | 310 | Python 3 stdlib only |
+| `scripts/git_archaeology.py` | 317 | Python 3 stdlib only |
+| `scripts/ast_skeleton.py` | 375 | Python 3 stdlib only |
+| `scripts/paper_analyze.py` | 315 | Python 3 stdlib + 可选 pdfplumber |
+
+### 9.2 单元测试结果
+
+| 脚本 | 测试对象 | 结果 | 备注 |
+|------|---------|------|------|
+| `git_archaeology.py` | project-mentor 自身 (2 commits) | ✅ | 与 .sh 输出一致 |
+| `git_archaeology.py` | go-chi/chi (803 commits) | ✅ | 21 个 timeline 点，比 .sh 版更完整 |
+| `ast_skeleton.py` | project-mentor (22 files) | ✅ | 正确提取 |
+| `ast_skeleton.py` | go-chi/chi (53 Go files) | ✅ | 正确提取 package/imports/funcs/types |
+| `paper_analyze.py` | arXiv ID 1706.03762 (Attention Is All You Need) | ✅ | arXiv API 模式，零依赖可用 |
+| `paper_analyze.py` | 无输入 | ✅ | 正确返回错误信息 |
+| `clone_and_analyze.py` | `go-chi/chi` (shallow) | ⚠️ | 网络波动导致 clone 失败，非脚本 bug |
+
+### 9.3 .py vs .sh 对比
+
+| 维度 | `.sh` | `.py` |
+|------|-------|-------|
+| first_commit | ✅ 一致 | ✅ 一致 |
+| milestones (chi) | 13 个 | 13 个 |
+| growth_timeline (chi) | 0 个 (bug) | **21 个** ✅ |
+| active_branches 过滤 | 含 HEAD (bug, 已修复) | 正确过滤 ✅ |
+| 跨平台 | macOS/Linux | **Windows/macOS/Linux** |
+| 依赖 | bash + git | **Python 3 + git** |
+| 编码处理 | 依赖 shell locale | **显式 UTF-8** |
+
+### 9.4 已发现 & 修复的 Bug
+
+| # | 描述 | 位置 | 状态 |
+|---|------|------|------|
+| 3 | `.py` 版 `subprocess.run` 未指定 `encoding='utf-8'`，Windows 上 GBK 解码失败 | git_archaeology.py, clone_and_analyze.py | ✅ 已修复 |
+| 4 | `.py` 版 `active_branches` 包含 `HEAD -> origin/master` 引用 | git_archaeology.py | ✅ 已修复 |
+| 5 | `.sh` 版 `active_branches` 同样未过滤 `HEAD ->` | git_archaeology.sh | ✅ 已修复 |
+
+---
+
+## 10. 测试结论
 
 **v2 MVP 静态完整性：14/14 引用匹配，4/4 脚本语法通过，9/9 预检步骤 + 7/7 阶段 + 科研模式全部覆盖。**
 

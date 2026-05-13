@@ -108,8 +108,10 @@ MILESTONES_JSON+="]"
 RECENT_COMMITS=$(git log --after="$RECENT_DAYS days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
 
 # Active branches (top 5)
-ACTIVE_BRANCHES=$(git branch -r --sort=-committerdate 2>/dev/null | head -5 | \
+ACTIVE_BRANCHES=$(git branch -r --sort=-committerdate 2>/dev/null | head -10 | \
+  grep -v 'HEAD ->' | \
   sed 's/^[ *]*//' | sed 's/origin\///' | \
+  head -5 | \
   awk 'BEGIN{printf "["} {printf "%s\"%s\"", (NR>1?",":""), $0} END{printf "]"}')
 ACTIVE_BRANCHES="${ACTIVE_BRANCHES:-[]}"
 

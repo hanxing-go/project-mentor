@@ -21,12 +21,14 @@ tools: Read, Write, Glob, Grep, Bash, WebFetch, WebSearch
 
 ## File Reference Map
 
+> **Cross-platform note:** Each script has both a `.sh` (zero-dependency shell) and a `.py` (cross-platform Python, stdlib only) version. Prefer `.py` on Windows; either works on macOS/Linux. Both produce identical JSON output.
+
 | Resource | Path | Used In |
 |----------|------|---------|
-| Clone & Analyze | `scripts/clone_and_analyze.sh` | Pre-flight, Phase 1 |
-| Git Archaeology | `scripts/git_archaeology.sh` | Phase 0 |
-| AST Skeleton | `scripts/ast_skeleton.sh` | Phase 1, Phase 3 |
-| Paper Analyzer | `scripts/paper_analyze.sh` | Academic Mode |
+| Clone & Analyze | `scripts/clone_and_analyze.sh` / `.py` | Pre-flight, Phase 1 |
+| Git Archaeology | `scripts/git_archaeology.sh` / `.py` | Phase 0 |
+| AST Skeleton | `scripts/ast_skeleton.sh` / `.py` | Phase 1, Phase 3 |
+| Paper Analyzer | `scripts/paper_analyze.sh` / `.py` | Academic Mode |
 | Project Patterns | `references/project-patterns.md` | Phase 1 |
 | Teaching Guide | `references/teaching-guide.md` | All phases |
 | Git Archaeology Ref | `references/git-archaeology.md` | Phase 0 |
@@ -756,9 +758,19 @@ See `references/knowledge-base.md` for the full schema and update rules.
 
 ## Script Quick Reference
 
+Each script has `.sh` and `.py` variants. The `.py` versions use Python 3 stdlib only (no pip install needed) and are preferred for cross-platform reliability (Windows/macOS/Linux). The `.sh` versions remain for zero-dependency environments where bash is available.
+
 | Script | Input | Output |
 |--------|-------|--------|
-| `clone_and_analyze.sh <url>` | GitHub URL | JSON: project metadata, tech stack, file stats, directory tree |
-| `git_archaeology.sh <path>` | Repo path with full git history | JSON: first commit, milestones, recent activity, growth timeline |
-| `ast_skeleton.sh <path>` | Repo path | JSON: modules array with imports, functions, classes, interfaces per file |
-| `paper_analyze.sh <pdf>` | PDF file or arXiv URL | JSON: paper metadata, abstract, sections, innovations, formulas, experiments |
+| `clone_and_analyze.sh` / `.py <url>` | GitHub URL | JSON: project metadata, tech stack, file stats, directory tree |
+| `git_archaeology.sh` / `.py <path>` | Repo path with full git history | JSON: first commit, milestones, recent activity, growth timeline |
+| `ast_skeleton.sh` / `.py <path>` | Repo path | JSON: modules array with imports, functions, classes, interfaces per file |
+| `paper_analyze.sh` / `.py <pdf>` | PDF file or arXiv URL | JSON: paper metadata, abstract, sections, innovations, formulas, experiments |
+
+**Run Python scripts:**
+```bash
+python scripts/clone_and_analyze.py <repo-url>
+python scripts/git_archaeology.py <repo-path>
+python scripts/ast_skeleton.py <repo-path>
+python scripts/paper_analyze.py --arxiv-url <url>
+```

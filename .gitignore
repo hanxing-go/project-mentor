@@ -5,6 +5,11 @@
 project-mentor-design-doc.md
 project-mentor-design-v2.md
 
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
 # OS files
 .DS_Store
 Thumbs.db
