@@ -288,6 +288,63 @@ def extract_java(lines):
     }
 
 
+def extract_cpp(lines):
+    imports = []
+    exports = []
+    functions = []
+    classes = []
+    interfaces = []
+
+    brace_depth = 0
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # #include statements
+        m = re.match(r'#include\s+(.+)', stripped)
+        if m:
+            imports.append(m.group(1).strip())
+            continue
+
+        # Skip preprocessor directives
+        if re.match(r'#(?:define|ifdef|ifndef|if|else|endif|pragma|undef|error|warning)', stripped):
+            continue
+
+        # Namespaces (as package-like)
+        m = re.match(r'namespace\s+(\w+)', stripped)
+        if m:
+            classes.append({'line': i, 'name': f'namespace {m.group(1)}'})
+
+        # Class/struct/enum definitions
+        m = re.match(r'(?:template\s*<[^>]*>\s*)?(?:class|struct|enum(?:\s+class)?)\s+(\w+)', stripped)
+        if m and brace_depth == 0:
+            classes.append({'line': i, 'name': f'{m.group(0).split()[0]} {m.group(1)}'})
+
+        # Function definitions (heuristic: return_type func_name( at namespace/global scope)
+        # Match: type name( | type* name( | type Class::method( | type::ns::func(
+        m = re.match(
+            r'(?:virtual\s+)?(?:static\s+)?(?:inline\s+)?(?:explicit\s+)?(?:const\s+)?'
+            r'(?:[\w:]+(?:<[^>]*>)?[\s*&]+)+'
+            r'(\w+(?:::\w+)*)\s*\([^)]*\)\s*(?:const\s*)?(?:override\s*)?\s*(?:\{|;)',
+            stripped,
+        )
+        if m and brace_depth == 0:
+            func_name = m.group(1)
+            if func_name not in ('if', 'while', 'for', 'switch', 'return', 'sizeof', 'typeof'):
+                functions.append({'line': i, 'signature': stripped[:120]})
+
+        # Track brace depth to skip function bodies
+        brace_depth += stripped.count('{') - stripped.count('}')
+
+    return {
+        'package': None,
+        'imports': imports,
+        'exports': exports,
+        'classes': classes,
+        'functions': functions,
+        'interfaces': interfaces,
+    }
+
+
 EXTRACTORS = {
     'go': extract_go,
     'py': extract_python,
@@ -298,6 +355,10 @@ EXTRACTORS = {
     'mjs': extract_typescript,
     'rs': extract_rust,
     'java': extract_java,
+    'c': extract_cpp,
+    'cpp': extract_cpp,
+    'h': extract_cpp,
+    'hpp': extract_cpp,
 }
 
 
