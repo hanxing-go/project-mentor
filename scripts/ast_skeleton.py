@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument('--skip-tests', action='store_true', default=True)
     parser.add_argument('--no-skip-tests', action='store_true', default=False)
     parser.add_argument('--max-file-lines', type=int, default=5000)
+    parser.add_argument('--max-files', type=int, default=500)
     return parser.parse_args()
 
 
@@ -59,7 +60,7 @@ def is_test_file(rel_path):
     return False
 
 
-def discover_files(project_path, extensions, skip_tests, max_lines):
+def discover_files(project_path, extensions, skip_tests, max_lines, max_files=500):
     found = []
     for dirpath, dirnames, filenames in os.walk(project_path):
         dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
@@ -81,7 +82,7 @@ def discover_files(project_path, extensions, skip_tests, max_lines):
 
             found.append((full_path, rel_path, ext))
 
-    return found[:500]
+    return found[:max_files]
 
 
 def extract_go(lines):
@@ -196,8 +197,8 @@ def extract_typescript(lines):
         if re.search(r'(?:function\s+\w+|\w+\s*=\s*(?:async\s*)?\(.*\)\s*=>)', line):
             functions.append({'line': i, 'signature': line.strip()})
 
-        # Classes
-        m = re.match(r'^\s*class\s+(\w+)', line)
+        # Classes (export / export default / abstract)
+        m = re.match(r'^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+(\w+)', line)
         if m:
             classes.append({'line': i, 'name': m.group(1)})
 
@@ -259,8 +260,15 @@ def extract_java(lines):
     functions = []
     classes = []
     interfaces = []
+    package = None
 
     for i, line in enumerate(lines, 1):
+        # Package
+        if package is None:
+            m = re.match(r'^package\s+([\w.]+)\s*;', line)
+            if m:
+                package = m.group(1)
+
         # Imports
         m = re.match(r'^import\s+(.+);', line)
         if m:
@@ -279,7 +287,7 @@ def extract_java(lines):
             classes.append({'line': i, 'name': f"{m.group(1)} {m.group(2)}"})
 
     return {
-        'package': None,
+        'package': package,
         'imports': imports,
         'exports': exports,
         'classes': classes,
@@ -336,7 +344,7 @@ def extract_cpp(lines):
         brace_depth += stripped.count('{') - stripped.count('}')
 
     return {
-        'package': None,
+        'package': package,
         'imports': imports,
         'exports': exports,
         'classes': classes,
@@ -363,6 +371,10 @@ EXTRACTORS = {
 
 
 def main():
+    # Ensure UTF-8 output on Windows (avoids GBK encoding errors with Unicode in source)
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
     args = parse_args()
     project_path = args.project_path
 
@@ -377,7 +389,7 @@ def main():
 
     skip_tests = not args.no_skip_tests
 
-    files = discover_files(project_path, extensions, skip_tests, args.max_file_lines)
+    files = discover_files(project_path, extensions, skip_tests, args.max_file_lines, args.max_files)
 
     files_found = len(files)
     files_analyzed = 0
