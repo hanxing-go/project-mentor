@@ -155,8 +155,6 @@ TIMELINE_JSON+="]"
 TOTAL_AUTHORS=$(git shortlog -sn 2>/dev/null | wc -l | tr -d ' ')
 TOTAL_AUTHORS="${TOTAL_AUTHORS:-1}"
 
-NARRATIVE="This project began on $FIRST_DATE when $FIRST_AUTHOR made the first commit: \"$FIRST_MSG\" — just $FIRST_FILES file(s) and $FIRST_INSERTIONS line(s) of code. Over $TOTAL_COMMITS commits by $TOTAL_AUTHORS contributor(s), it grew to $FILE_COUNT files. In the last $RECENT_DAYS days, there have been $RECENT_COMMITS commits."
-
 # Current file count (from project root)
 FILE_COUNT_CURRENT=$(find . -type f \
   -not -path '*/node_modules/*' \
@@ -168,6 +166,8 @@ FILE_COUNT_CURRENT=$(find . -type f \
   -not -path '*/dist/*' \
   -not -path '*/build/*' \
   -not -path '*/.next/*' 2>/dev/null | wc -l | tr -d ' ')
+
+NARRATIVE="This project began on $FIRST_DATE when $FIRST_AUTHOR made the first commit: \"$FIRST_MSG\" — just $FIRST_FILES file(s) and $FIRST_INSERTIONS line(s) of code. Over $TOTAL_COMMITS commits by $TOTAL_AUTHORS contributor(s), it grew to $FILE_COUNT_CURRENT files. In the last $RECENT_DAYS days, there have been $RECENT_COMMITS commits."
 
 NARRATIVE_ESC=$(escape_json "$NARRATIVE")
 
