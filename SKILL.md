@@ -227,12 +227,16 @@ Present the findings in this order:
 ### Prerequisites
 
 - `clone_and_analyze.sh` output from pre-flight (re-run if stale)
-- First run of `ast_skeleton.sh` for structure overview
+- First run of `ast_skeleton.py` for structure overview
 
 ### Execution
 
 1. Use the tech stack data from Step 0.6 (already cloned and analyzed)
-2. Run `scripts/ast_skeleton.sh <clone-path>` to get the module skeleton overview
+2. Run `scripts/ast_skeleton.py <clone-path>` to get the module skeleton overview:
+   - The `module_summaries` field gives a directory-level overview (always covers all directories)
+   - For small/medium projects (<500 source files): the `modules` array contains per-file details sorted by architecture importance
+   - For large projects (500+ files): add `--summaries-only` for a lightweight overview, or `--max-files N` to control detail depth
+   - Check `truncation_notice` to see if per-file details were trimmed
 3. Classify the project type using the decision flowchart in `references/project-patterns.md`
 4. Read the directory tree from clone output to understand top-level organization
 
@@ -332,12 +336,15 @@ Present the findings in this order:
 
 ### Prerequisites
 
-- `scripts/ast_skeleton.sh` output (full run on all source files)
+- `scripts/ast_skeleton.py` output (full run on all source files)
 - Project type classification from Phase 1
 
 ### Execution
 
-1. Run `scripts/ast_skeleton.sh <clone-path>` with all source files. Parse the full `modules` array.
+1. Run `scripts/ast_skeleton.py <clone-path>` with all source files. Parse the output:
+   - Start with `module_summaries` for the directory-level overview (always covers ALL directories)
+   - If `truncation_notice` is present, the `modules` array is the top-N most important files (sorted by architecture score). Use `--max-files N` to adjust (0=unlimited)
+   - If no truncation notice, the `modules` array contains all files sorted by importance
 2. From the imports data in the JSON output, construct a dependency graph:
    - Node = each module (file)
    - Edge = A imports B
@@ -364,7 +371,7 @@ Present the findings in this order:
 
 3. **Dependency graph** — Generate a Mermaid or ASCII dependency graph. See `references/output-templates.md` for the Mermaid template.
 
-4. **Key interfaces** — Show the most important interfaces/abstract classes. "These are the contracts that hold the system together. If you understand these, you understand the architecture." Point to lines from the AST skeleton data.
+4. **Key interfaces** — Show the most important interfaces/abstract classes (from `modules` where `kind` is `interface` or `abstract`). "These are the contracts that hold the system together. If you understand these, you understand the architecture."
 
 5. **The most-imported module** — "{{module_name}} is imported by {{N}} other files. This is the heart of the system. Everything depends on it."
 
@@ -606,6 +613,93 @@ After all 7 phases (0-6) are complete:
 
 ---
 
+## Large Project Adaptations
+
+When studying projects with 500+ source files, the standard phase approach needs adjustment. The `ast_skeleton.py` output uses a two-stage format designed for this.
+
+### Two-Stage Output Format
+
+The JSON output has three main fields:
+
+```json
+{
+  "project_summary": {
+    "total_files": 1902,
+    "total_lines": 245000,
+    "languages": {"TypeScript": 1500, "Python": 200},
+    "kind_distribution": {"service": 80, "controller": 45, "dto": 300}
+  },
+  "module_summaries": {
+    "src/controllers/": {"file_count": 45, "total_lines": 12000, "top_classes": ["UserController"]},
+    "src/services/": {"file_count": 80, "total_lines": 35000, "top_classes": ["AuthService"]}
+  },
+  "modules": [
+    {"path": "src/main.ts", "kind": "entry", "score": 120, "imports": [...], "classes": [...]}
+  ],
+  "truncation_notice": "modules limited to top 500 of 1902 files by importance score..."
+}
+```
+
+- **`project_summary`** — Aggregate stats for the entire project. Always present.
+- **`module_summaries`** — Per-directory aggregation: file count, lines, language distribution, kind distribution, top classes/exports. Always covers ALL directories regardless of project size. Use for directory walkthroughs and architecture overview.
+- **`modules`** — Per-file details (imports, functions, classes, interfaces). Sorted by importance score descending. May be truncated for large projects — check `truncation_notice`.
+- **`truncation_notice`** — Present when `modules` was limited. Explains why and what to do.
+
+### File Importance Scoring
+
+Files are scored to ensure the most architecturally significant ones are included when `modules` is truncated:
+
+| Factor | Score | Rationale |
+|--------|-------|-----------|
+| Entry point (main, app, index) | +100 | Where execution begins |
+| Fan-in count | +2 per importer | Heavily imported = architecturally central |
+| Service / Controller / Manager / Handler | +30 | Core business logic |
+| Interface / Abstract | +20 | Contracts that hold the system together |
+| Large file (>200 lines) | +10 | Likely contains significant logic |
+| Root-level file | +20 | Top-level wiring and configuration |
+| DTO / VO / Enum / Mapper / Config | -50 | Boilerplate, less architectural value |
+
+### CLI Flags for Large Projects
+
+```bash
+# Lightweight directory overview only (~5-65KB for any project size)
+python scripts/ast_skeleton.py <path> --summaries-only
+
+# Control per-file detail depth
+python scripts/ast_skeleton.py <path> --max-files 100   # Top 100 most important
+python scripts/ast_skeleton.py <path> --max-files 0      # Unlimited (all files)
+```
+
+### `kind` Values
+
+Each module is classified with a `kind` field for quick filtering:
+
+| Kind | Description | Examples |
+|------|-------------|----------|
+| `entry` | Application entry point | `main.go`, `App.tsx`, `Application.java` |
+| `service` | Business logic / service layer | `UserService`, `OrderManager` |
+| `controller` | HTTP handler / route controller | `UserController`, `ApiHandler` |
+| `handler` | Event/message handler | `EventHandler`, `MessageProcessor` |
+| `provider` | Dependency injection provider | `DatabaseProvider`, `ConfigProvider` |
+| `interface` | Interface / abstract class / protocol | `Repository`, `IService` |
+| `dto` | Data transfer object | `CreateUserRequest`, `OrderResponse` |
+| `enum` | Enumeration / constants | `Status`, `ErrorCode` |
+| `mapper` | Object mapping / serialization | `UserMapper`, `DtoConverter` |
+| `config` | Configuration / properties | `AppConfig`, `application.yaml` |
+| `util` | Utility / helper functions | `StringUtils`, `DateHelper` |
+| `test` | Test file | `*_test.go`, `*.spec.ts` |
+| `other` | Unclassified | Files that don't match any rule |
+
+### Phase Adaptations for Large Projects
+
+- **Phase 1:** Start with `--summaries-only` to get the directory landscape. Use `module_summaries` for the directory walkthrough. Only dive into `modules` for key directories.
+- **Phase 2:** Entry point detection still works — entry files get +100 score, so they're always in the top-N even with tight limits.
+- **Phase 3:** Use `module_summaries` for layer identification. The `kind` field makes it easy to find all services/controllers/DTOs without scanning every file.
+- **Phase 4:** The data flow trace needs full files — use the top-N `modules` to identify the critical path, then read those files directly.
+- **Phase 5:** The most-imported modules (highest fan-in) are always at the top of `modules`. Use `--max-files 50` and pick from the top 10.
+
+---
+
 ## Academic / Research Mode
 
 ### Trigger
@@ -625,7 +719,7 @@ Instead of the standard 7 phases, run these 4 specialized phases:
 
 #### 🔗 Phase B: Paper → Code Mapping
 
-1. Run `scripts/ast_skeleton.sh <clone-path>` on the codebase
+1. Run `scripts/ast_skeleton.py <clone-path>` on the codebase. For large projects, start with `--summaries-only` to get the directory landscape, then re-run with `--max-files N` for detailed per-file data on key directories.
 2. For each claim from Phase A, search the codebase using the strategies in `references/paper-code-mapping.md`
 3. Build and present the mapping table:
 
@@ -764,7 +858,7 @@ Each script has `.sh` and `.py` variants. The `.py` versions use Python 3 stdlib
 |--------|-------|--------|
 | `clone_and_analyze.sh` / `.py <url>` | GitHub URL | JSON: project metadata, tech stack, file stats, directory tree |
 | `git_archaeology.sh` / `.py <path>` | Repo path with full git history | JSON: first commit, milestones, recent activity, growth timeline |
-| `ast_skeleton.sh` / `.py <path>` | Repo path | JSON: modules array with imports, functions, classes, interfaces per file |
+| `ast_skeleton.sh` / `.py <path>` | Repo path | JSON: `project_summary` (aggregate stats), `module_summaries` (per-directory, always full), `modules` (per-file, top-N by importance score). Supports `--max-files N` (default 500, 0=unlimited) and `--summaries-only` for large projects |
 | `paper_analyze.sh` / `.py <pdf>` | PDF file or arXiv URL | JSON: paper metadata, abstract, sections, innovations, formulas, experiments |
 
 **Run Python scripts:**

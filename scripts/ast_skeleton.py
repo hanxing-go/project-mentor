@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # ast_skeleton.py — Extract code skeleton from a codebase (imports, signatures, exports only)
-# Usage: python ast_skeleton.py <project-path> [--extensions go,py,ts] [--skip-tests] [--max-file-lines 5000]
+# Usage: python ast_skeleton.py <project-path> [--extensions go,py,ts] [--skip-tests] [--max-file-lines 5000] [--max-files 500] [--summaries-only]
 # Output: JSON to stdout
+#
+# Large project mode: Files are scored by importance (entry points, fan-in, roles).
+# Boilerplate (DTOs, enums, configs) is de-prioritized.
+# --summaries-only gives directory-level overview for any project size.
 #
 # Cross-platform Python port of ast_skeleton.sh.
 # Uses stdlib only — no tree-sitter dependency (regex extraction always used).
@@ -36,6 +40,99 @@ EXT_TO_LANG = {
     'c': 'C/C++', 'cpp': 'C/C++', 'h': 'C/C++', 'hpp': 'C/C++',
 }
 
+# Kinds that receive score penalty (low information density)
+BOILERPLATE_KINDS = frozenset({
+    'dto', 'vo', 'po', 'req', 'resp',
+    'enum', 'mapper', 'constant', 'config', 'properties',
+})
+
+# Kinds that receive score bonus (architecturally significant)
+BONUS_KINDS = frozenset({
+    'service', 'controller', 'manager', 'handler', 'provider',
+})
+
+# Canonical entry-point filenames (case-insensitive, exact basename match)
+ENTRY_POINT_NAMES = frozenset({
+    'main.ts', 'main.tsx', 'main.js', 'main.jsx', 'main.mjs',
+    'index.ts', 'index.tsx', 'index.js', 'index.jsx',
+    'app.ts', 'app.tsx', 'app.js', 'app.jsx',
+    'server.ts', 'server.js',
+    '_app.tsx', '_app.ts',
+    'application.java', 'main.java', 'app.java',
+    'springbootapplication.java', 'servletinitializer.java',
+    'main.go',
+    'main.rs', 'lib.rs',
+    'main.py', '__main__.py', '__init__.py',
+    'app.py', 'server.py', 'manage.py',
+    'train.py',
+    'main.rb', 'app.rb',
+    'main.swift', 'main.kt',
+    'main.c', 'main.cpp',
+})
+
+# Suffix patterns for entry point files (case-insensitive)
+ENTRY_POINT_SUFFIXES = (
+    'application.java',
+    'application.kt',
+    'app.go',
+)
+
+# Classification rules: (language, scope) -> [(regex_pattern, kind), ...]
+# Filename patterns (match against basename, case-insensitive)
+_FILENAME_RULES = {
+    'dto': [r'(?:dto|vo|po|req|request|resp|response|payload|schema)\.'],
+    'enum': [r'(?:enum|enums)\.'],
+    'mapper': [r'mapper\.'],
+    'constant': [r'(?:constant|constants|property|properties|setting|settings)\.'],
+    'config': [r'config\.'],
+    'service': [r'service\.'],
+    'controller': [r'controller\.'],
+    'repository': [r'(?:repository|repo|dao|mapper)\.'],
+    'model': [r'(?:entity|model|domain|models)\.'],
+    'util': [r'(?:util|utils|helper|helpers)\.'],
+    'interface': [r'(?:interface|interfaces|types|type|protocol|abc|abstract|base)\.'],
+    'handler': [r'handler\.'],
+    'middleware': [r'(?:middleware|guard|interceptor|decorator|filter)\.'],
+    'error': [r'(?:exception|exceptions|error|errors)\.'],
+}
+
+# Path-based rules (match against directory names, case-insensitive)
+_PATH_RULES = {
+    'dto': [r'[/\\](?:dto|vo|request|response|payload|schema)s?[/\\]'],
+    'enum': [r'[/\\](?:enums?)[/\\]'],
+    'mapper': [r'[/\\](?:mappers?|dao)[/\\]'],
+    'config': [r'[/\\](?:config|configuration|settings)[/\\]'],
+    'service': [r'[/\\](?:services?)[/\\]'],
+    'controller': [r'[/\\](?:controllers?|handlers?|views?)[/\\]'],
+    'repository': [r'[/\\](?:repositories|repository|dao)[/\\]'],
+    'model': [r'[/\\](?:models?|entities?|domain)[/\\]'],
+    'util': [r'[/\\](?:utils?|helpers?)[/\\]'],
+    'interface': [r'[/\\](?:interfaces?|protocols?|abc|abstract)[/\\]'],
+    'middleware': [r'[/\\](?:middlewares?|guards?|interceptors?|decorators?|filters?)[/\\]'],
+    'error': [r'[/\\](?:exceptions?|errors?)[/\\]'],
+}
+
+# Class-name-based inference rules (fallback when filename/path can't classify)
+_INFERRED_RULES = [
+    (r'service', 'service'),
+    (r'controller', 'controller'),
+    (r'handler', 'handler'),
+    (r'repository|dao', 'repository'),
+    (r'mapper', 'mapper'),
+    (r'dto$|vo$|request$|response$|payload$|schema$', 'dto'),
+    (r'config|settings|properties', 'config'),
+    (r'enum$|enums$', 'enum'),
+    (r'entity|model|domain', 'model'),
+    (r'util$|utils$|helper$|helpers$', 'util'),
+    (r'middleware|filter|interceptor|guard|decorator', 'middleware'),
+    (r'exception|error$', 'error'),
+    (r'interface$|^i[A-Z]', 'interface'),
+    (r'module$', 'module'),
+    (r'resolver$', 'resolver'),
+    (r'provider$|factory$', 'provider'),
+    (r'manager$', 'manager'),
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract AST skeleton from a codebase')
@@ -44,7 +141,10 @@ def parse_args():
     parser.add_argument('--skip-tests', action='store_true', default=True)
     parser.add_argument('--no-skip-tests', action='store_true', default=False)
     parser.add_argument('--max-file-lines', type=int, default=5000)
-    parser.add_argument('--max-files', type=int, default=500)
+    parser.add_argument('--max-files', type=int, default=500,
+                        help='Max detailed file skeletons in modules output (0=unlimited, default 500)')
+    parser.add_argument('--summaries-only', action='store_true', default=False,
+                        help='Output only directory-level module_summaries, no per-file modules')
     return parser.parse_args()
 
 
@@ -60,7 +160,7 @@ def is_test_file(rel_path):
     return False
 
 
-def discover_files(project_path, extensions, skip_tests, max_lines, max_files=500):
+def discover_files(project_path, extensions, skip_tests):
     found = []
     for dirpath, dirnames, filenames in os.walk(project_path):
         dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
@@ -82,7 +182,7 @@ def discover_files(project_path, extensions, skip_tests, max_lines, max_files=50
 
             found.append((full_path, rel_path, ext))
 
-    return found[:max_files]
+    return found  # All files — scoring + truncation happens in main()
 
 
 def extract_go(lines):
@@ -370,6 +470,207 @@ EXTRACTORS = {
 }
 
 
+def classify_file(rel_path, language, extracted_data):
+    filename = os.path.basename(rel_path).lower()
+
+    # 1. Test check
+    if is_test_file(rel_path):
+        return 'test'
+
+    # 2. Entry point check (exact basename or suffix match)
+    if filename in ENTRY_POINT_NAMES:
+        return 'entry'
+    if filename.endswith(ENTRY_POINT_SUFFIXES):
+        return 'entry'
+
+    # 3. Filename-based rules
+    for kind, patterns in _FILENAME_RULES.items():
+        for pattern in patterns:
+            if re.search(pattern, filename):
+                return kind
+
+    # 4. Path-based rules (each directory component)
+    parts = Path(rel_path).parts
+    for part in parts:
+        part_lower = part.lower()
+        for kind, patterns in _PATH_RULES.items():
+            for pattern in patterns:
+                if re.search(pattern, part_lower):
+                    return kind
+
+    # 5. Class/interface name inference (fallback)
+    for cls in extracted_data.get('classes', []):
+        name = (cls.get('name', '') if isinstance(cls, dict) else str(cls)).lower()
+        for pattern, kind in _INFERRED_RULES:
+            if re.search(pattern, name):
+                return kind
+    for iface in extracted_data.get('interfaces', []):
+        name = (iface.get('name', '') if isinstance(iface, dict) else str(iface)).lower()
+        for pattern, kind in _INFERRED_RULES:
+            if re.search(pattern, name):
+                return kind
+
+    return 'unknown'
+
+
+def _resolve_import_to_file(import_stmt, importer_path, known_files):
+    cleaned = import_stmt.strip().strip('\'"`;')
+    if not cleaned:
+        return None
+
+    # Relative imports: ./foo, ../bar
+    if cleaned.startswith('.'):
+        importer_dir = os.path.dirname(importer_path).replace('\\\\', '/')
+        resolved = os.path.normpath(os.path.join(importer_dir, cleaned)).replace('\\\\', '/')
+        # Try exact match, then with common extensions
+        for ext in ('', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java', '.rb', '.swift', '.kt'):
+            candidate = resolved + ext
+            if candidate in known_files:
+                return candidate
+        # Try index files
+        for ext in ('.ts', '.tsx', '.js', '.py'):
+            candidate = resolved + '/index' + ext
+            if candidate in known_files:
+                return candidate
+        candidate = resolved + '/__init__.py'
+        if candidate in known_files:
+            return candidate
+        return None
+
+    # Java-style: com.example.model.User -> com/example/model/User.java
+    if '.' in cleaned:
+        as_path = cleaned.replace('.', '/') + '.java'
+        if as_path in known_files:
+            return as_path
+
+    # Go-style: "github.com/foo/bar" -> match by suffix
+    for kf in known_files:
+        if kf.endswith('/' + cleaned) or cleaned.endswith(kf):
+            return kf
+
+    return None
+
+
+def build_import_map(all_modules):
+    import_map = {}
+    project_files = {m['file'] for m in all_modules}
+
+    for module in all_modules:
+        for imp in module.get('imports', []):
+            if isinstance(imp, dict):
+                stmt = imp.get('statement', '')
+            else:
+                stmt = str(imp)
+            target = _resolve_import_to_file(stmt, module['file'], project_files)
+            if target:
+                import_map.setdefault(target, []).append(module['file'])
+
+    return import_map
+
+
+def compute_importance_score(module, import_map):
+    score = 0
+    filename = os.path.basename(module['file']).lower()
+
+    if filename in ENTRY_POINT_NAMES or filename.endswith(ENTRY_POINT_SUFFIXES):
+        score += 100
+
+    importers = import_map.get(module['file'], [])
+    score += len(importers) * 2
+
+    kind = module.get('kind', 'unknown')
+    if kind in BOILERPLATE_KINDS:
+        score -= 50
+    if kind in BONUS_KINDS:
+        score += 30
+    if kind == 'interface':
+        score += 20
+
+    if module.get('lines', 0) > 200:
+        score += 10
+
+    parts = Path(module['file']).parts
+    if len(parts) <= 2:
+        score += 20
+    elif len(parts) == 3 and parts[0] in ('src', 'lib', 'app', 'internal', 'cmd', 'pkg'):
+        score += 15
+
+    module['importance_score'] = score
+    module['fan_in'] = len(importers)
+    return score
+
+
+def build_module_summaries(modules):
+    from collections import defaultdict
+
+    dirs = defaultdict(lambda: {
+        'files': [],
+        'total_lines': 0,
+        'languages': defaultdict(int),
+        'kinds': defaultdict(int),
+        'scores': [],
+        'subdirs': set(),
+    })
+
+    for module in modules:
+        rel_path = module['file']
+        dirname = os.path.dirname(rel_path) or '.'
+
+        entry = dirs[dirname]
+        entry['files'].append(module)
+        entry['total_lines'] += module.get('lines', 0)
+        entry['languages'][module.get('language', 'unknown')] += 1
+        entry['kinds'][module.get('kind', 'unknown')] += 1
+        entry['scores'].append(module.get('importance_score', 0))
+
+        if dirname != '.':
+            parent = os.path.dirname(dirname) or '.'
+            dirs[parent]['subdirs'].add(dirname)
+
+    summaries = []
+    for dirname, data in sorted(dirs.items()):
+        # Skip directories with no direct files (only subdirectories)
+        if len(data['files']) == 0:
+            continue
+        data['files'].sort(key=lambda m: m.get('importance_score', 0), reverse=True)
+
+        top_exports = []
+        top_classes = []
+        top_functions = []
+        for m in data['files'][:5]:
+            for exp in m.get('exports', [])[:2]:
+                name = exp.get('declaration', exp) if isinstance(exp, dict) else str(exp)
+                top_exports.append(name[:80])
+            for cls in m.get('classes', [])[:2]:
+                name = cls.get('name', str(cls))
+                top_classes.append(name)
+            for fn in m.get('functions', [])[:2]:
+                sig = fn.get('signature', str(fn))
+                top_functions.append(sig[:80])
+
+        lang_counts = data['languages']
+        primary_lang = max(lang_counts, key=lang_counts.get) if lang_counts else 'unknown'
+        scores = data['scores']
+
+        summaries.append({
+            'directory': dirname.replace('\\\\', '/'),
+            'file_count': len(data['files']),
+            'total_lines': data['total_lines'],
+            'primary_language': primary_lang,
+            'language_distribution': dict(lang_counts),
+            'kind_distribution': dict(data['kinds']),
+            'top_exports': top_exports[:10],
+            'top_classes': top_classes[:10],
+            'top_functions': top_functions[:10],
+            'mean_importance_score': round(sum(scores) / len(scores), 1) if scores else 0,
+            'max_importance_score': max(scores) if scores else 0,
+            'subdirectories': sorted(data['subdirs']),
+        })
+
+    summaries.sort(key=lambda s: (s['directory'].count('/'), s['directory']))
+    return summaries
+
+
 def main():
     # Ensure UTF-8 output on Windows (avoids GBK encoding errors with Unicode in source)
     if hasattr(sys.stdout, 'reconfigure'):
@@ -382,21 +683,20 @@ def main():
         print(json.dumps({'status': 'error', 'error': 'No valid project directory provided.'}))
         sys.exit(1)
 
-    if args.extensions:
-        extensions = set(args.extensions.split(','))
-    else:
-        extensions = DEFAULT_EXTENSIONS
-
+    extensions = set(args.extensions.split(',')) if args.extensions else DEFAULT_EXTENSIONS
     skip_tests = not args.no_skip_tests
+    max_files = args.max_files  # 0 means unlimited, None means not set
 
-    files = discover_files(project_path, extensions, skip_tests, args.max_file_lines, args.max_files)
+    # ---- STEP 1: Discover ALL files (no truncation here) ----
+    file_entries = discover_files(project_path, extensions, skip_tests)
+    total_found = len(file_entries)
 
-    files_found = len(files)
+    # ---- STEP 2: Extract ALL files ----
+    all_modules = []
     files_analyzed = 0
     files_skipped = 0
-    modules = []
 
-    for full_path, rel_path, ext in files:
+    for full_path, rel_path, ext in file_entries:
         try:
             with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                 lines = f.readlines()
@@ -411,8 +711,8 @@ def main():
 
         files_analyzed += 1
         lang = EXT_TO_LANG.get(ext, 'unknown')
-
         extractor = EXTRACTORS.get(ext)
+
         if extractor:
             extracted = extractor(lines)
         else:
@@ -421,8 +721,8 @@ def main():
                 'classes': [], 'functions': [], 'interfaces': [],
             }
 
-        modules.append({
-            'file': rel_path.replace('\\', '/'),
+        module = {
+            'file': rel_path.replace('\\\\', '/'),
             'language': lang,
             'lines': line_count,
             'package': extracted['package'],
@@ -431,16 +731,78 @@ def main():
             'classes': extracted['classes'],
             'functions': extracted['functions'],
             'interfaces': extracted['interfaces'],
-        })
+        }
+        all_modules.append(module)
 
+    # ---- STEP 3: Classify each file ----
+    for module in all_modules:
+        module['kind'] = classify_file(module['file'], module['language'], module)
+
+    # ---- STEP 4: Build import map and compute fan-in ----
+    import_map = build_import_map(all_modules)
+
+    # ---- STEP 5: Score each file ----
+    for module in all_modules:
+        compute_importance_score(module, import_map)
+
+    # ---- STEP 6: Sort by importance score (descending) ----
+    all_modules.sort(key=lambda m: m.get('importance_score', 0), reverse=True)
+
+    # ---- STEP 7: Build module summaries (from ALL modules) ----
+    module_summaries = build_module_summaries(all_modules)
+
+    # ---- STEP 8: Build project summary ----
+    from collections import Counter
+    lang_counter = Counter(m['language'] for m in all_modules)
+    kind_counter = Counter(m.get('kind', 'unknown') for m in all_modules)
+    total_lines = sum(m['lines'] for m in all_modules)
+
+    project_summary = {
+        'total_files_found': total_found,
+        'total_files_analyzed': files_analyzed,
+        'total_files_skipped': files_skipped,
+        'total_lines': total_lines,
+        'languages': dict(lang_counter.most_common()),
+        'kind_distribution': dict(kind_counter.most_common()),
+    }
+
+    # ---- STEP 9: Select modules for detailed output ----
+    if args.summaries_only:
+        output_modules = []
+        truncation_notice = (
+            f'Skipped per-file module details (--summaries-only). '
+            f'{files_analyzed} files analyzed. '
+            f'See `module_summaries` for directory-level overview and `project_summary` for aggregate stats.'
+        )
+    elif max_files == 0 or len(all_modules) <= max_files:
+        output_modules = all_modules
+        truncation_notice = None
+    else:
+        output_modules = all_modules[:max_files]
+        truncation_notice = (
+            f'Showing top {max_files} of {len(all_modules)} files '
+            f'by importance score (entry points, high fan-in, and '
+            f'architecturally significant files prioritized). '
+            f'Boilerplate (DTOs, enums, configs, mappers) is de-prioritized. '
+            f'Use --max-files N to adjust (0=unlimited). '
+            f'Use --summaries-only for directory-level overview only. '
+            f'The `module_summaries` field covers all directories regardless.'
+        )
+
+    # ---- STEP 10: Build output JSON ----
     output = {
         'status': 'success',
         'method': 'regex',
-        'files_found': files_found,
+        'files_found': total_found,
         'files_analyzed': files_analyzed,
         'files_skipped': files_skipped,
-        'modules': modules,
+        'project_summary': project_summary,
+        'module_summaries': module_summaries,
+        'modules': output_modules,
     }
+    if truncation_notice:
+        output['truncation_notice'] = truncation_notice
+
     print(json.dumps(output, ensure_ascii=False))
 
 
