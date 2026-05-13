@@ -78,45 +78,47 @@ detect_language() {
     sed -n 's/.*\.\([a-zA-Z0-9]\+\)$/\1/p' | \
     sort | uniq -c | sort -rn | head -20)
 
-  # Map extensions to languages
-  local primary=""
-  local ext_map
-  declare -A lang_scores
+  # Map extensions to languages using a temp file (macOS bash 3.2 compat: no declare -A)
+  local scores_file
+  scores_file=$(mktemp /tmp/pm_lang_scores.XXXXXX)
 
   while read -r count ext; do
     case "$ext" in
-      go)           ((lang_scores["Go"] += count)) ;;
-      rs)           ((lang_scores["Rust"] += count)) ;;
-      py|pyx)       ((lang_scores["Python"] += count)) ;;
-      ts|tsx)       ((lang_scores["TypeScript"] += count)) ;;
-      js|jsx|mjs)   ((lang_scores["JavaScript"] += count)) ;;
-      java)         ((lang_scores["Java"] += count)) ;;
-      rb)           ((lang_scores["Ruby"] += count)) ;;
-      php)          ((lang_scores["PHP"] += count)) ;;
-      c|cpp|h|hpp)  ((lang_scores["C/C++"] += count)) ;;
-      swift)        ((lang_scores["Swift"] += count)) ;;
-      kt|kts)       ((lang_scores["Kotlin"] += count)) ;;
-      vue)          ((lang_scores["Vue"] += count)) ;;
-      svelte)       ((lang_scores["Svelte"] += count)) ;;
-      sh|bash|zsh)  ((lang_scores["Shell"] += count)) ;;
-      sol)          ((lang_scores["Solidity"] += count)) ;;
+      go)           echo "Go $count" ;;
+      rs)           echo "Rust $count" ;;
+      py|pyx)       echo "Python $count" ;;
+      ts|tsx)       echo "TypeScript $count" ;;
+      js|jsx|mjs)   echo "JavaScript $count" ;;
+      java)         echo "Java $count" ;;
+      rb)           echo "Ruby $count" ;;
+      php)          echo "PHP $count" ;;
+      c|cpp|h|hpp)  echo "C/C++ $count" ;;
+      swift)        echo "Swift $count" ;;
+      kt|kts)       echo "Kotlin $count" ;;
+      vue)          echo "Vue $count" ;;
+      svelte)       echo "Svelte $count" ;;
+      sh|bash|zsh)  echo "Shell $count" ;;
+      sol)          echo "Solidity $count" ;;
       *)            ;; # unknown extension
     esac
-  done <<< "$counts"
+  done <<< "$counts" >> "$scores_file"
 
-  # Pick highest scoring language
-  primary=$(for lang in "${!lang_scores[@]}"; do echo "${lang_scores[$lang]} $lang"; done | sort -rn | head -1 | cut -d' ' -f2-)
+  # Aggregate scores by language using awk (POSIX, works on macOS + Linux)
+  local primary
+  primary=$(awk '{scores[$1]+=$2} END {for(lang in scores) print scores[lang], lang}' "$scores_file" | sort -rn | head -n 1 | cut -d' ' -f2-)
   echo "${primary:-Unknown}"
 
   # Emit language breakdown as JSON object
-  local first=true
-  printf '{'
-  for lang in "${!lang_scores[@]}"; do
-    $first || printf ','
-    printf '"%s":%d' "$lang" "${lang_scores[$lang]}"
-    first=false
-  done
-  printf '}'
+  awk '{scores[$1]+=$2} END {
+    first=1; printf "{";
+    for(lang in scores) {
+      if(!first) printf ","; first=0;
+      printf "\"%s\":%d", lang, scores[lang];
+    }
+    printf "}";
+  }' "$scores_file"
+
+  rm -f "$scores_file"
 }
 
 LANG_OUTPUT=$(detect_language)
